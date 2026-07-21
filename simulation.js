@@ -533,12 +533,14 @@ SphereObject.prototype.setSkewed = function (vec) {
 // setOrientationType("absolute", n, u)
 //
 // NOTE ON A SOURCE BUG: the AS passed `leterrsRAs[i]` (a typo for `letterRAs`)
-// as the RA of the "up" vector, so that vector evaluated to NaN and Flash
-// silently ignored the resulting `instance._rotation = NaN` assignment. The
-// letter therefore kept rotation 0 within its shell, and only the shell's
-// rotation and y-scale (both derived from the valid normal vector) had any
-// effect. This port reproduces that observed behaviour: the normal drives the
-// shell, and the letter itself is not counter-rotated.
+// as the RA of the "up" vector, so that vector evaluated to NaN and the letter
+// was never counter-rotated to stand up straight -- leaving only the shell's
+// rotation, which tilts each glyph with the sphere's surface normal and spins
+// the captions around as the view is dragged.
+//
+// This port keeps the geometry below (the normal is still what classifies a
+// letter as front- or back-facing) but does NOT apply the resulting rotation
+// to the glyphs: captions are painted upright. See paintObject().
 SphereObject.prototype.setAbsoluteNormal = function (normalVec) {
   this.oType = 2;
   const v1 = parsePointInput(normalVec, {});
@@ -893,15 +895,21 @@ function paintCircleLayer(ctx, cache, side) {
 function paintObject(ctx, obj) {
   ctx.save();
   ctx.translate(obj.sp.x, obj.sp.y);
-  ctx.rotate(obj.rotation);
-  // A negative y-scale is a genuine vertical flip in the original, and canvas
-  // reproduces it; guard only against an exact zero, which is not invertible.
-  const ys = (obj.yScale === 0) ? 1e-6 : obj.yScale;
-  ctx.scale(1, ys);
 
   if (obj.kind === 'stickman') {
+    ctx.rotate(obj.rotation);
+    // A negative y-scale is a genuine vertical flip in the original, and canvas
+    // reproduces it; guard only against an exact zero, which is not invertible.
+    const ys = (obj.yScale === 0) ? 1e-6 : obj.yScale;
+    ctx.scale(1, ys);
     drawArt(ctx, ART.stickman);
   } else {
+    // Caption letters are drawn UPRIGHT: positioned on the sphere, but never
+    // rotated or squashed with it. Each letter still sits at its own point
+    // along the line of constant declination, so the caption follows the
+    // circle it annotates and travels with the sphere as the view turns --
+    // but the glyphs stay level and readable instead of spinning, tilting or
+    // mirroring. See the "static captions" note in CONVERSION_NOTES.md.
     ctx.font = LETTER_FONT;
     ctx.fillStyle = LETTER_COLOR;
     ctx.textAlign = 'center';
@@ -934,19 +942,32 @@ function paintHorizonPlane(ctx) {
   if (sy === 0) { return; }              // edge-on: nothing to show
 
   const above = state.phi > 0;
+  const A = Math.PI + state.theta;       // 180 + theta, in radians
+
   ctx.save();
   ctx.scale(sx, sy);
-  ctx.rotate(Math.PI + state.theta);     // 180 + theta, in radians
+  ctx.rotate(A);
   drawArt(ctx, above ? ART.aboveHorizon : ART.belowHorizon);
+  ctx.restore();
 
-  // N / S / E / W markers ride on the plane, so they share its squash.
+  // The N/S/E/W markers keep their PLACE on the plane -- north stays at the
+  // horizon's north point and swings round as the view turns -- but the glyphs
+  // themselves are painted upright rather than being rotated and squashed flat
+  // with the plane. Riding the plane transform would mirror them at half the
+  // viewing angles, which made them unreadable. The plane transform is applied
+  // to the anchor point by hand so only the position, not the glyph, inherits
+  // it.
+  const cosA = Math.cos(A), sinA = Math.sin(A);
+  ctx.save();
   ctx.font = LETTER_FONT;
   ctx.fillStyle = above ? '#ffffff' : '#999999';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   for (let i = 0; i < DIRECTION_LABELS.length; i++) {
     const L = DIRECTION_LABELS[i];
-    ctx.fillText(L.ch, L.x, L.y);
+    const rx = L.x * cosA - L.y * sinA;
+    const ry = L.x * sinA + L.y * cosA;
+    ctx.fillText(L.ch, sx * rx, sy * ry);
   }
   ctx.restore();
 }

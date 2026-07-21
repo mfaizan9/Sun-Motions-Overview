@@ -106,15 +106,24 @@ and no exported file exists for it.
    accessible controls. The observable behaviour (range, step, value formatting,
    change handlers) is identical.
 
-3. **A caption-orientation bug in the source is reproduced, not "fixed".**
-   `addDeclinationText()` passes `leterrsRAs[i]` — a typo for `letterRAs` — as
-   the right ascension of each letter's "up" vector. That vector therefore
-   evaluated to `NaN`, and Flash silently ignored the resulting
-   `instance._rotation = NaN` assignment, so each letter kept rotation 0 inside
-   its shell while the shell's rotation and vertical squash (both derived from
-   the valid normal vector) still applied. The port reproduces that observed
-   behaviour rather than the evidently-intended one, because the intended
-   version would change how the captions look. See `setAbsoluteNormal()`.
+3. **Captions are static: positioned on the sphere, but never rotated with it.**
+   This is a deliberate, requested departure from the original.
+
+   The source has a bug here. `addDeclinationText()` passes `leterrsRAs[i]` — a
+   typo for `letterRAs` — as the right ascension of each letter's "up" vector,
+   so that vector evaluated to `NaN` and the counter-rotation that would have
+   stood each glyph up straight never happened. What remained was the shell
+   rotation, which tilts every glyph with the sphere's local surface normal and
+   vertically squashes it by that normal's screen-depth. The visible result is
+   that captions spin as the sphere is dragged, and mirror themselves whenever
+   the squash factor goes negative.
+
+   The port therefore paints caption glyphs **upright**. Each letter still sits
+   at its own point along its line of constant declination, so a caption follows
+   the curve of the circle it annotates and travels with the sphere as the view
+   turns — only the glyph orientation is held level. The normal is still
+   computed, because it is what classifies a letter as front- or back-facing for
+   depth ordering. See `setAbsoluteNormal()` and `paintObject()`.
 
 4. **Caption letter spacing uses live text metrics.** The original measured
    letter widths with Flash's `TextFormat.getTextExtent()` on Verdana 12px. The
@@ -128,11 +137,15 @@ and no exported file exists for it.
    is filled at `fill-opacity: 0` and its handlers call methods that do not
    exist on its parent. It is invisible and non-functional dev leftover.
 
-6. **N/S/E/W markers are positioned approximately.** They ride on the horizon
-   plane and share its non-uniform squash, exactly as in the original, but they
-   are centred on the original placement coordinates rather than reproducing the
-   Flash `DefineText` glyph-box offsets. At the scale they render (heavily
-   foreshortened, a few pixels tall) the difference is not perceptible.
+6. **N/S/E/W markers keep their place on the horizon plane but are also drawn
+   upright.** In the original they ride the plane's transform, so they are
+   rotated and squashed flat with it — and mirrored at roughly half of all
+   viewing angles, which makes them unreadable. For consistency with deviation 3
+   the plane transform is applied to each marker's *anchor point* only, by hand,
+   so north still sits at the horizon's north point and swings round as the view
+   turns, while the glyph stays level. They are also centred on the original
+   placement coordinates rather than reproducing the Flash `DefineText`
+   glyph-box offsets; at the size they render the difference is not perceptible.
 
 7. **Repeated toggling no longer leaks caption letters.** In the original,
    re-checking a box called `addDeclinationText()` again, which allocated a new

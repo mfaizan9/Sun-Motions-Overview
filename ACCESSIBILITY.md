@@ -181,17 +181,23 @@ altitude 40°, latitude 41.0° N, all four steps off), with the DOM re-synced.
 ## Known limitations
 
 1. **Caption text is drawn on the canvas.** The NCP/SCP and path captions are
-   individual letters projected onto the sphere's surface and squashed in
-   perspective — they are intrinsically 3D art and cannot be moved into HTML
-   without abandoning the effect that makes them read as lying on the sphere.
-   They are not mathematical notation, so rule 8a does not apply. All of their
-   content is exposed to screen readers through the live description, and the
-   path key repeats every label as real, zoomable HTML text.
+   individual letters positioned along the circle they annotate, so they are
+   intrinsically tied to the projected 3D geometry and cannot move into HTML
+   without losing that association. They are not mathematical notation, so rule
+   8a does not apply. All of their content is exposed to screen readers through
+   the live description, and the path key repeats every label as real, zoomable
+   HTML text.
 
-2. **The N/S/E/W markers are small and heavily foreshortened**, exactly as in the
-   original, because they lie flat on the horizon plane. The canvas description
-   states that north, south, east and west are marked around the plane's edge, so
-   the information is not colour- or size-dependent.
+   The glyphs themselves are painted **upright** rather than tilted and squashed
+   with the sphere's surface (see CONVERSION_NOTES.md, deviation 3). Besides
+   being what was asked for, this is the more legible result: the original's
+   orientation maths mirrored the text at many viewing angles.
+
+2. **The N/S/E/W markers are small.** They keep their position on the horizon
+   plane, so north always marks the horizon's north point, but they too are drawn
+   upright rather than squashed flat and mirrored. The canvas description states
+   that north, south, east and west are marked around the plane's edge, so the
+   information is not size- or colour-dependent.
 
 3. **Human QA is still required.** Automated and scripted checks cannot
    substitute for listening to the simulation. Please verify with a real screen
