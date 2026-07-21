@@ -1,0 +1,346 @@
+/* ===========================================================================
+   Sun Motions Overview -- sim-specific styles ONLY.
+
+   The shared palette, shell, panel, fieldset, control and focus styles all
+   come from foundation/kl-unl.css, which is never edited or overridden here.
+   Everything below either sets a variable the foundation already reads, or
+   styles a component the foundation does not provide (the sphere stage, its
+   keyboard proxy, the readout column and the path key).
+   =========================================================================== */
+
+:root {
+  /* Sim-local tokens. A single spacing scale keeps every panel, row and
+     fieldset breathing equally. */
+  --sim-space-xs:  0.35rem;
+  --sim-space-sm:  0.6rem;
+  --sim-space-md:  1rem;
+  --sim-space-lg:  1.5rem;
+
+  /* One shared size for every small readout / input field, so equal-purpose
+     fields are visually equal rather than a jumble of widths. */
+  --sim-field-width:  7.5rem;
+  --sim-field-height: 2.75rem;
+
+  /* The sphere sits on the original sim's black sky. */
+  --sim-sky:          #05070d;
+
+  /* Path colours, carried over from the ActionScript so the key matches the
+     canvas exactly. Colour is never the only signal: every entry is named. */
+  --sim-pole-color:   #75a9ff;   /* 7711231  ncpAxis / scpAxis      */
+  --sim-ce-color:     #ffe375;   /* 16769909 celestialEquator       */
+  --sim-sun-color:    #ff0000;   /* 16711680 equinox + solstice     */
+}
+
+/* --- typography ----------------------------------------------------------
+   Body copy is comfortably larger than the browser default and sized in rem
+   so it tracks the user's own font setting and survives 200% zoom. */
+body {
+  font-size:   1.125rem;
+  line-height: 1.5;
+}
+
+.panel__heading {
+  font-size:     1.25rem;
+  padding:       var(--sim-space-sm) var(--sim-space-md);
+  border-bottom: var(--border-bottom-width) var(--border-bottom-style)
+                 var(--border-bottom-color);
+}
+
+.control-fieldset__legend {
+  font-size: 1.125rem;
+  padding:   0 0 var(--sim-space-sm);
+}
+
+.control-choice label,
+.control-row__label {
+  font-size: 1.0625rem;
+}
+
+/* --- layout --------------------------------------------------------------
+   The original is a single portrait column: sphere on top, latitude next,
+   then the four steps. That reading order is the DOM order here, so the
+   foundation's own 56rem collapse produces exactly the original stacking
+   with no help from us.
+
+   Above that breakpoint only, the diagram takes the wide column and the
+   controls the narrow one. Scoping this to min-width leaves the foundation's
+   max-width:56rem rule completely untouched. */
+.sim-layout {
+  gap: var(--sim-space-md);
+  padding: var(--sim-space-xs) var(--sim-space-xs) var(--sim-space-lg);
+}
+
+@media (min-width: 56.0625rem) {
+  .sim-layout {
+    grid-template-columns: minmax(0, 1fr) 25rem;
+    align-items: stretch;
+  }
+}
+
+.sim-panel {
+  display:        flex;
+  flex-direction: column;
+  padding-bottom: var(--sim-space-md);
+}
+
+/* --- the sphere stage ----------------------------------------------------
+   The canvas keeps the original internal coordinate system and is scaled by
+   CSS with its aspect ratio preserved; simulation.js maps pointer positions
+   back through that scale, so the drag math stays in Flash coordinates. */
+.sim-canvas-wrap {
+  padding: 0 var(--sim-space-md) var(--sim-space-sm);
+}
+
+.sim-canvas-stage {
+  position:      relative;
+  width:         100%;
+  max-width:     32rem;
+  margin:        0 auto;
+  aspect-ratio:  1 / 1;
+  background:    var(--sim-sky);
+  border-width:  var(--border-width);
+  border-style:  var(--border-style);
+  border-color:  var(--border-color);
+}
+
+#sim-canvas {
+  display:      block;
+  width:        100%;
+  height:       auto;
+  /* Dragging the sphere must not scroll or zoom the page on touch devices. */
+  touch-action: none;
+}
+
+/* The keyboard proxy covers the stage so the focus ring frames the sphere it
+   controls. Pointer events stay on the canvas beneath it. */
+.sim-view-proxy {
+  position:       absolute;
+  inset:          0;
+  pointer-events: none;
+}
+
+.sim-view-proxy:focus-visible {
+  outline-width:  0.125rem;
+  outline-style:  solid;
+  outline-color:  var(--outline-color);
+  outline-offset: 0.125rem;
+}
+
+.sim-help {
+  font-size: 1rem;
+  margin:    var(--sim-space-sm) var(--sim-space-md) 0;
+  max-width: 46ch;
+}
+
+/* --- controls ------------------------------------------------------------
+   A two-column grid, label left and value right, so labels line up down one
+   edge and the readouts line up down another. */
+.sim-fieldset {
+  padding: 0 var(--sim-space-md) var(--sim-space-md);
+}
+
+.sim-fieldset + .sim-fieldset {
+  padding-top:  var(--sim-space-md);
+  border-top:   var(--border-width) var(--border-style) var(--border-color);
+  margin-top:   var(--sim-space-xs);
+}
+
+.sim-row-latitude {
+  grid-template-columns: 1fr auto;
+  align-items:   center;
+  gap:           var(--sim-space-xs) var(--sim-space-sm);
+  margin-bottom: var(--sim-space-xs);
+}
+
+/* Readout and number field share one width and one height, and both sit
+   flush to the right edge of the column, so their edges align vertically. */
+.sim-readout,
+.sim-number {
+  box-sizing:  border-box;
+  width:       var(--sim-field-width);
+  min-height:  var(--sim-field-height);
+}
+
+.sim-readout {
+  display:        flex;
+  align-items:    center;
+  justify-content: flex-end;
+  padding:        var(--sim-space-xs) var(--sim-space-sm);
+  font-size:      1.125rem;
+  border-width:   var(--border-width);
+  border-style:   var(--border-style);
+  border-color:   var(--border-color);
+}
+
+.sim-readout__math {
+  /* Display-only: never a tab stop. */
+  outline: none;
+}
+
+.sim-slider {
+  grid-column: 1 / -1;
+  width:       100%;
+  min-height:  2.75rem;      /* comfortable touch target */
+  margin:      0;
+}
+
+/* Scale end labels sit under the ends of the track and share its edges. */
+.sim-scale-min,
+.sim-scale-max {
+  font-size: 0.95rem;
+  margin-top: calc(-1 * var(--sim-space-xs));
+}
+
+.sim-scale-min { grid-column: 1; justify-self: start; }
+.sim-scale-max { grid-column: 2; justify-self: end;   }
+
+.sim-row-number {
+  grid-template-columns: 1fr auto;
+  align-items:   center;
+  gap:           var(--sim-space-xs) var(--sim-space-sm);
+  margin-top:    var(--sim-space-sm);
+  margin-bottom: 0;
+}
+
+.sim-number {
+  /* Digits line up down the column. */
+  text-align: right;
+  font-size:  1.125rem;
+}
+
+/* --- the four steps ------------------------------------------------------
+   One per row, in numbered order, mirroring the original's stacked list. */
+.sim-steps {
+  grid-template-columns: 1fr;
+  gap: var(--sim-space-sm);
+}
+
+.sim-steps .control-choice {
+  min-height: 2.75rem;
+  gap:        var(--sim-space-sm);
+}
+
+.sim-steps input[type="checkbox"] {
+  width:  1.5rem;
+  height: 1.5rem;
+}
+
+/* The box itself is 1.5rem, so the label carries the rest of the target: it
+   fills the row and is a full 2.75rem tall, keeping the combined hit area at
+   or above the 44px minimum without an oversized checkbox. */
+.sim-steps .control-choice label {
+  display:     flex;
+  align-items: center;
+  flex:        1 1 auto;
+  min-height:  2.75rem;
+  padding:     0.25rem 0;
+}
+
+/* --- path key ------------------------------------------------------------
+   Names and declinations accompany every swatch, so the key never relies on
+   colour alone. */
+.sim-key {
+  display:               grid;
+  grid-template-columns: auto 1fr;
+  align-items:           baseline;
+  gap:                   var(--sim-space-xs) var(--sim-space-sm);
+  margin:                var(--sim-space-md) 0 0;
+  font-size:             1rem;
+}
+
+.sim-key dt {
+  display:     flex;
+  align-items: center;
+  gap:         var(--sim-space-xs);
+  font-weight: bold;
+}
+
+.sim-key dd {
+  margin: 0;
+}
+
+.sim-key__swatch {
+  width:         1.5rem;
+  height:        0.25rem;
+  flex-shrink:   0;
+  border-radius: 0.125rem;
+  /* A thin outline keeps every swatch visible against the panel background
+     and in forced-colours mode. */
+  outline:       1px solid var(--border-color);
+}
+
+.sim-key__swatch--pole { background: var(--sim-pole-color); }
+.sim-key__swatch--ce   { background: var(--sim-ce-color);   }
+.sim-key__swatch--sun  { background: var(--sim-sun-color);  }
+
+/* --- narrow / portrait ---------------------------------------------------
+   Below the foundation's own breakpoint everything is already one column.
+   These rules just keep it comfortable down to phone-portrait widths: no
+   horizontal scrolling, nothing clipped, controls wrapping rather than
+   overflowing. */
+@media (max-width: 30rem) {
+  .sim-layout {
+    padding: 0 0 var(--sim-space-md);
+    gap:     var(--sim-space-sm);
+  }
+
+  .sim-canvas-wrap,
+  .sim-fieldset {
+    padding-left:  var(--sim-space-sm);
+    padding-right: var(--sim-space-sm);
+  }
+
+  .sim-row-latitude,
+  .sim-row-number {
+    grid-template-columns: 1fr;
+    justify-items: stretch;
+  }
+
+  /* Full-width fields read better than a narrow right-aligned column once
+     the label is on its own line. */
+  .sim-readout,
+  .sim-number {
+    width: 100%;
+  }
+
+  .sim-scale-min,
+  .sim-scale-max {
+    grid-column: 1;
+    justify-self: start;
+  }
+
+  .sim-scale-max { justify-self: end; margin-top: 0; }
+
+  .sim-key {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
+  }
+
+  .sim-key dd {
+    margin-bottom: var(--sim-space-xs);
+  }
+}
+
+/* --- reduced motion ------------------------------------------------------
+   This sim has no autonomous animation: every change is a direct response to
+   a user action and completes immediately. Nothing flashes. The rule below
+   only removes any user-agent smooth-scrolling on the skip link. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* --- forced colours ------------------------------------------------------
+   Keep the swatches and the canvas frame perceivable in Windows High
+   Contrast mode, where background colours are dropped. */
+@media (forced-colors: active) {
+  .sim-key__swatch {
+    forced-color-adjust: none;
+    outline: 1px solid CanvasText;
+  }
+
+  .sim-canvas-stage {
+    border-color: CanvasText;
+  }
+}
