@@ -180,18 +180,20 @@ altitude 40°, latitude 41.0° N, all four steps off), with the DOM re-synced.
 
 ## Known limitations
 
-1. **Caption text is drawn on the canvas.** The NCP/SCP and path captions are
-   individual letters positioned along the circle they annotate, so they are
-   intrinsically tied to the projected 3D geometry and cannot move into HTML
-   without losing that association. They are not mathematical notation, so rule
-   8a does not apply. All of their content is exposed to screen readers through
-   the live description, and the path key repeats every label as real, zoomable
-   HTML text.
+1. **Caption text is drawn on the canvas.** Each caption is positioned against
+   the circle it annotates, so it is tied to the projected 3D geometry and cannot
+   move into HTML without losing that association. Captions are not mathematical
+   notation, so rule 8a does not apply. All of their content is exposed to screen
+   readers through the live description, and the path key repeats every label as
+   real, zoomable HTML text.
 
-   The glyphs themselves are painted **upright** rather than tilted and squashed
-   with the sphere's surface (see CONVERSION_NOTES.md, deviation 3). Besides
-   being what was asked for, this is the more legible result: the original's
-   orientation maths mirrored the text at many viewing angles.
+   Each caption is a single **level, left-to-right string** with no rotation or
+   scale, carrying a dark halo so it keeps contrast over whatever it passes in
+   front of (see CONVERSION_NOTES.md, deviation 3). This is a substantial
+   legibility gain over the original, which spread the letters around the circle
+   and tilted each one — text that read vertically at some viewing angles and
+   backwards at others. Verified across 3,780 orientations: no caption is ever
+   rotated, mirrored, overlapped by another, or clipped by the canvas edge.
 
 2. **The N/S/E/W markers are small.** They keep their position on the horizon
    plane, so north always marks the horizon's north point, but they too are drawn

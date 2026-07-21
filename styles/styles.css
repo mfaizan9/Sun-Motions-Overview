@@ -94,7 +94,10 @@ body {
 .sim-canvas-stage {
   position:      relative;
   width:         100%;
-  max-width:     32rem;
+  /* The stage includes a caption margin around the sphere, so it is allowed a
+     little more width than the sphere alone would need; this keeps the sphere
+     itself at roughly the same on-screen size. */
+  max-width:     40rem;
   margin:        0 auto;
   aspect-ratio:  1 / 1;
   background:    var(--sim-sky);

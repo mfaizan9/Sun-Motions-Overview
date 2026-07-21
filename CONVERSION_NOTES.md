@@ -106,24 +106,58 @@ and no exported file exists for it.
    accessible controls. The observable behaviour (range, step, value formatting,
    change handlers) is identical.
 
-3. **Captions are static: positioned on the sphere, but never rotated with it.**
-   This is a deliberate, requested departure from the original.
+3. **Captions are static: one level string per circle, never rotated.** This is
+   a deliberate, requested departure from the original.
 
-   The source has a bug here. `addDeclinationText()` passes `leterrsRAs[i]` — a
-   typo for `letterRAs` — as the right ascension of each letter's "up" vector,
-   so that vector evaluated to `NaN` and the counter-rotation that would have
-   stood each glyph up straight never happened. What remained was the shell
-   rotation, which tilts every glyph with the sphere's local surface normal and
-   vertically squashes it by that normal's screen-depth. The visible result is
-   that captions spin as the sphere is dragged, and mirror themselves whenever
-   the squash factor goes negative.
+   The original laid each caption out as individual letters spread along its
+   line of constant declination, every letter pinned to its own right ascension.
+   Two things went wrong with that. First, a source bug: `addDeclinationText()`
+   passes `leterrsRAs[i]` — a typo for `letterRAs` — as the right ascension of
+   each letter's "up" vector, so that vector evaluated to `NaN`, the
+   counter-rotation that would have stood each glyph upright never happened, and
+   the remaining shell rotation tilted every glyph with the sphere's local
+   surface normal (mirroring it wherever that normal's screen-depth went
+   negative). Second, and independent of the bug, pinning letters to fixed right
+   ascensions means the *whole string* sweeps around as the view turns: measured
+   over one rotation, "Summer Solstice Path" read at −13°, −54°, −120°, −163°,
+   +167° and +126° — vertical at some angles and right-to-left at others.
 
-   The port therefore paints caption glyphs **upright**. Each letter still sits
-   at its own point along its line of constant declination, so a caption follows
-   the curve of the circle it annotates and travels with the sphere as the view
-   turns — only the glyph orientation is held level. The normal is still
-   computed, because it is what classifies a letter as front- or back-facing for
-   depth ordering. See `setAbsoluteNormal()` and `paintObject()`.
+   A caption is therefore now **one horizontal string**, anchored to the point of
+   its circle nearest the viewer and drawn with no rotation or scale at all. It
+   still slides around with the sphere, so it stays visibly attached to the
+   circle it names, but it is always level and always reads left to right.
+   Supporting details:
+
+   - Each caption is anchored a fixed angle *around* its own circle
+     (`CAPTION_SPREAD_DEG`: −60° / 0° / +60° for the summer, equinox and winter
+     paths). Without this, at azimuths where the circles are seen symmetrically
+     every nearest-point shares an x and the labels pile up.
+   - The label is nudged `CAPTION_OFFSET` px along the circle's outward normal so
+     it never sits on the line it labels.
+   - Captions are painted with a dark halo (`drawCaptionText`) so white text
+     stays legible over the yellow celestial equator, the red sun paths and the
+     light green horizon plane alike.
+   - NCP and SCP are placed once each rather than twice. The original needed two
+     copies (ra 0 and ra 12) so one was always on the visible side; an anchor at
+     the nearest point is on the visible side by construction, and a second copy
+     would simply overlap the first.
+   - The original's "absolute" orientation type existed only to orient these
+     letters and is no longer ported; `SphereObject` keeps only the "flat" and
+     "skewed" types, the latter still used by the stick figure.
+
+   Verified by sweeping 3,780 orientations (every 6° of azimuth × 7 viewing
+   altitudes × 9 latitudes): of 31,941 glyphs drawn, none carried any rotation,
+   skew or flip, no two visible captions overlapped, and none was clipped.
+
+3a. **The canvas stage was enlarged from 320 to 420 units** to accommodate the
+   above. A whole caption is far wider than a single letter, so one anchored near
+   the sphere's limb reaches about 196 units from centre and would have been cut
+   in half by the old 160-unit half-extent. The sphere's own coordinate system
+   and radius (125) are unchanged — only the size of the canvas around it — and
+   `styles.css` widens the stage's `max-width` to match, so the sphere still
+   renders at about 252 px, essentially its original 250 px. A clamp in
+   `Caption.resolve()` remains as a backstop; across the full sweep it never had
+   to act.
 
 4. **Caption letter spacing uses live text metrics.** The original measured
    letter widths with Flash's `TextFormat.getTextExtent()` on Verdana 12px. The

@@ -60,12 +60,18 @@ const DEC_SUMMER_SOLSTICE =  23.5;
 const DEC_WINTER_SOLSTICE = -23.5;
 
 // Canvas stage. The sphere's own coordinate system is unchanged from Flash
-// (origin at the sphere centre, radius 125); only the origin's placement
-// inside the canvas differs, so that the sphere sits centred in its panel.
-const STAGE_W = 320;
-const STAGE_H = 320;
-const STAGE_CX = 160;
-const STAGE_CY = 160;
+// (origin at the sphere centre, radius 125); only the origin's placement inside
+// the canvas differs, so that the sphere sits centred in its panel.
+//
+// The stage is sized to leave room for the captions. A caption anchored at the
+// sphere's limb reaches 125 + 11 px out, plus half the width of the longest
+// string ("Summer Solstice Path", ~60 px), so a half-extent of 210 keeps every
+// label fully on the canvas at every orientation. CSS scales the whole thing to
+// fit the panel, so this costs nothing on screen.
+const STAGE_W = 420;
+const STAGE_H = 420;
+const STAGE_CX = 210;
+const STAGE_CY = 210;
 
 // Verdana at 12 px, matching the "Verdana Letter" symbol (fontHeight 240 twips)
 const LETTER_FONT = '12px Verdana, "DejaVu Sans", Geneva, sans-serif';
@@ -370,7 +376,13 @@ Circle.prototype.project = function () {
     }
   }
 
-  return { front: front, back: back, v: [v0, v1, v2, v3, v4, v5] };
+  // v0..v5 place a point on screen; v6..v8 give its depth, which captions use
+  // to find the point on this circle nearest the viewer.
+  return {
+    front: front, back: back,
+    v: [v0, v1, v2, v3, v4, v5],
+    vz: [v6, v7, v8]
+  };
 };
 
 // Port of the local drawArc() inside CSCirclesClass.update -- tessellates the
@@ -530,24 +542,10 @@ SphereObject.prototype.setSkewed = function (vec) {
   this.p_o = { x: this.p.x + this.o.x, y: this.p.y + this.o.y, z: this.p.z + this.o.z };
 };
 
-// setOrientationType("absolute", n, u)
-//
-// NOTE ON A SOURCE BUG: the AS passed `leterrsRAs[i]` (a typo for `letterRAs`)
-// as the RA of the "up" vector, so that vector evaluated to NaN and the letter
-// was never counter-rotated to stand up straight -- leaving only the shell's
-// rotation, which tilts each glyph with the sphere's surface normal and spins
-// the captions around as the view is dragged.
-//
-// This port keeps the geometry below (the normal is still what classifies a
-// letter as front- or back-facing) but does NOT apply the resulting rotation
-// to the glyphs: captions are painted upright. See paintObject().
-SphereObject.prototype.setAbsoluteNormal = function (normalVec) {
-  this.oType = 2;
-  const v1 = parsePointInput(normalVec, {});
-  const nm = Math.sqrt(v1.x * v1.x + v1.y * v1.y + v1.z * v1.z);
-  this.n = { x: v1.x / nm, y: v1.y / nm, z: v1.z / nm };
-  this.p_n = { x: this.p.x + this.n.x, y: this.p.y + this.n.y, z: this.p.z + this.n.z };
-};
+// The original's third orientation type, "absolute", is not ported: it existed
+// only to orient the individual caption letters, and captions are now single
+// level strings positioned by Caption.resolve() instead. See CONVERSION_NOTES.md,
+// deviation 3, for the source bug that made that orientation path unusable.
 
 // Computes screen position, rotation and vertical squash for this object.
 // Mirrors CSObjectsClass.update() cases 1 and 2.
@@ -578,18 +576,6 @@ SphereObject.prototype.resolve = function () {
     }
     this.yScale  = Math.sqrt(1 - (opz * opz) / SPHERE_R2);
     this.rotation = Math.atan2(sp_o.y - sp.y, sp_o.x - sp.x) + Math.PI / 2;
-  } else if (this.oType === 2) {
-    const sp_n = {};
-    let npz;
-    if (this.sys === 0) {
-      npz = (this.n.x * c.a6 + this.n.y * c.a7 + this.n.z * c.a8) / SPHERE_R;
-      WtoSz(this.p_n, sp_n);
-    } else {
-      npz = (this.n.x * c.b6 + this.n.y * c.b7 + this.n.z * c.b8) / SPHERE_R;
-      CtoSz(this.p_n, sp_n);
-    }
-    this.yScale   = npz;
-    this.rotation = Math.atan2(sp_n.y - sp.y, sp_n.x - sp.x) + Math.PI / 2;
   } else {
     this.yScale = 1;
     this.rotation = 0;
@@ -597,50 +583,115 @@ SphereObject.prototype.resolve = function () {
 };
 
 /* ---------------------------------------------------------------------------
-   Declination text -- port of addDeclinationText from the main frame script
+   Captions
 
-   Each label is broken into single letters, spread along a line of constant
-   declination, so the text follows the curve of the circle it annotates.
+   The original spread a caption's individual letters along its line of constant
+   declination, so the text curved with the sphere. Because each letter was
+   pinned to its own right ascension, the whole string swept round as the view
+   turned -- reading at any angle, and backwards through half the rotation.
+
+   Here a caption is instead ONE horizontal string, anchored to the point of its
+   circle nearest the viewer. It still slides around with the sphere, so it
+   stays visibly attached to the circle it names, but it is always level and
+   always reads left to right. See CONVERSION_NOTES.md, deviation 3.
    --------------------------------------------------------------------------- */
 
+const CAPTION_OFFSET = 11;      // px clear of the circle, along its outward normal
+const CAPTION_MARGIN = 4;       // px kept between a caption and the stage edge
+const CAPTION_HALF_HEIGHT = 7;  // half the 12px line box, for edge clamping
+
+// Text widths are needed before anything is painted, so they are measured on a
+// scratch context and cached -- the set of captions is small and fixed.
 let measureCtx = null;
-function letterWidth(ch) {
-  if (!measureCtx) {
-    measureCtx = document.createElement('canvas').getContext('2d');
-    measureCtx.font = LETTER_FONT;
+const captionWidths = Object.create(null);
+
+function captionHalfWidth(text) {
+  if (captionWidths[text] === undefined) {
+    if (!measureCtx) {
+      measureCtx = document.createElement('canvas').getContext('2d');
+      measureCtx.font = LETTER_FONT;
+    }
+    captionWidths[text] = measureCtx.measureText(text).width;
   }
-  return measureCtx.measureText(ch).width;
+  return captionWidths[text] / 2;
 }
 
-function makeDeclinationText(str, ra, dec, gap) {
-  // r = cos(dec) * (sphere.size / 2)
-  const r = Math.cos(dec * DEG2RAD) * SPHERE_R;
-  const spacingAngle = gap * letterWidth(' ') / r;
-  const letters = str.split('');
-  const letterRAs = [];
-  let cursorAngle = 0;
+// Anchoring every caption to the point nearest the viewer would stack them all
+// on the same meridian: at some azimuths the sun-path circles are seen
+// symmetrically and their nearest points share an x, piling the labels on top
+// of one another. Each caption is therefore anchored a fixed angle AROUND its
+// own circle instead, which fans them apart while keeping every label on the
+// circle it names. The poles need no spread -- their circles are tiny and sit
+// at opposite ends of the axis.
+// These values were chosen by sweeping the whole viewing range (every azimuth,
+// viewing altitudes from -75 to +75, latitudes from -90 to +90) and picking a
+// combination where no two visible captions ever overlap.
+const CAPTION_SPREAD_DEG = {
+  'Summer Solstice Path': -60,
+  'Winter Solstice Path':  60,
+  'Equinox Path':           0,
+  'Celestial Equator':      0,
+  'NCP':                    0,
+  'SCP':                    0
+};
 
-  for (let i = 0; i < letters.length; i++) {
-    const letterAngle = letterWidth(letters[i]) / r;
-    letterRAs[i] = RAD2HR * (cursorAngle + letterAngle / 2);
-    cursorAngle = cursorAngle + letterAngle + spacingAngle;
-  }
-  cursorAngle -= spacingAngle;
-  const offset = RAD2HR * (cursorAngle / 2);
-
-  const out = [];
-  const northern = state.lat > 0;
-  for (let i = 0; i < letters.length; i++) {
-    const raI = northern ? (ra + letterRAs[i] - offset)
-                         : (ra - letterRAs[i] + offset);
-    const obj = new SphereObject('letter', { dec: dec, ra: raI },
-                                 { letter: letters[i] });
-    // Orientation "absolute": the normal is the letter's own radial direction.
-    obj.setAbsoluteNormal({ dec: dec, ra: raI });
-    out.push(obj);
-  }
-  return out;
+function Caption(text, dec) {
+  this.kind = 'caption';
+  this.text = text;
+  this.dec = dec;
+  this.visible = true;
+  this.spread = (CAPTION_SPREAD_DEG[text] || 0) * DEG2RAD;
+  // A stand-in for the circle this caption annotates, used only to locate the
+  // anchor point; it is never drawn.
+  this.circle = new Circle({
+    sys: 1, ra: 0, dec: dec, tilt: 0,
+    thickness: 1, color: 0, alpha: 100
+  });
 }
+
+Caption.prototype.resolve = function () {
+  const proj = this.circle.project();
+  const v = proj.v, vz = proj.vz;
+
+  // Depth along the circle is  z(g) = v6·cos g + v7·sin g + v8,
+  // which peaks at g = atan2(v7, v6) -- the point closest to the viewer. The
+  // per-caption spread shifts the anchor around the circle from there.
+  const g = Math.atan2(vz[1], vz[0]) + this.spread;
+  const cg = Math.cos(g), sg = Math.sin(g);
+
+  const x = v[0] * cg + v[1] * sg + v[2];
+  const y = v[3] * cg + v[4] * sg + v[5];
+  const z = vz[0] * cg + vz[1] * sg + vz[2];
+
+  // Nudge the label clear of the circle, along the outward-pointing normal of
+  // the projected ellipse, so it never sits on top of the line it labels.
+  const tx = -v[0] * sg + v[1] * cg;         // tangent
+  const ty = -v[3] * sg + v[4] * cg;
+  let nx = -ty, ny = tx;                     // normal
+  const n = Math.hypot(nx, ny);
+  if (n > 1e-9) {
+    nx /= n; ny /= n;
+    if (nx * x + ny * y < 0) { nx = -nx; ny = -ny; }   // point away from centre
+  } else {
+    nx = 0; ny = -1;
+  }
+
+  let cx = x + nx * CAPTION_OFFSET;
+  let cy = y + ny * CAPTION_OFFSET;
+
+  // A whole caption is far wider than a single letter was, so one anchored near
+  // the left or right limb of the sphere would otherwise run off the stage and
+  // be cut in half. Keep the text box inside the canvas; the nudge is at most a
+  // couple of dozen pixels, so the label stays next to the circle it names.
+  const halfW = captionHalfWidth(this.text);
+  const limitX = STAGE_W / 2 - CAPTION_MARGIN - halfW;
+  const limitY = STAGE_H / 2 - CAPTION_MARGIN - CAPTION_HALF_HEIGHT;
+  if (limitX > 0) { cx = Math.max(-limitX, Math.min(limitX, cx)); }
+  if (limitY > 0) { cy = Math.max(-limitY, Math.min(limitY, cy)); }
+
+  this.sp = { x: cx, y: cy, z: z };
+  this.region = (z < 0) ? 'bS' : 'fS';
+};
 
 /* ---------------------------------------------------------------------------
    Scene assembly -- mirrors the main frame script's construction order
@@ -688,11 +739,12 @@ function buildScene() {
       head: { x: 0, y: 0, z: 0,    system: 'celestial' },
       tail: { x: 0, y: 0, z: -1.2, system: 'celestial' } }) });
 
-    // addDeclinationText(4..7, "NCP"/"SCP", ra 0 and 12, dec +/-85, gap 0.5)
-    pushLabel('NCP', 0,  85, 0.5);
-    pushLabel('NCP', 12, 85, 0.5);
-    pushLabel('SCP', 0,  -85, 0.5);
-    pushLabel('SCP', 12, -85, 0.5);
+    // The original placed NCP and SCP twice each (at ra 0 and ra 12) so that
+    // one copy was always on the visible side. A caption anchored to the
+    // nearest point of its circle is always on the visible side by
+    // construction, so one of each is enough -- two would simply overlap.
+    pushLabel('NCP', 85);
+    pushLabel('SCP', -85);
   }
 
   // --- Step 2: Show CE ----------------------------------------------------
@@ -713,9 +765,9 @@ function buildScene() {
   // on the sphere (ra 0, dec 0.7), so the original showed only one at a time:
   // Step 3's caption wins while it is on, otherwise Step 2's is restored.
   if (state.showEquinox) {
-    pushLabel('Equinox Path', 0, 0.7, 0.5);
+    pushLabel('Equinox Path', 0.7);
   } else if (state.showCE) {
-    pushLabel('Celestial Equator', 0, 0.7, 0.5);
+    pushLabel('Celestial Equator', 0.7);
   }
 
   // --- Step 4: Show Solstice Paths ----------------------------------------
@@ -726,14 +778,13 @@ function buildScene() {
     scene.circles.push({ key: 'wSolsticePath', circle: new Circle({
       sys: 1, ra: 0, dec: DEC_WINTER_SOLSTICE, tilt: 0,
       thickness: 3, color: COLOR_SUN_PATH, alpha: 100 }) });
-    pushLabel('Summer Solstice Path', 0, DEC_SUMMER_SOLSTICE, 0.5);
-    pushLabel('Winter Solstice Path', 0, DEC_WINTER_SOLSTICE, 0.5);
+    pushLabel('Summer Solstice Path', DEC_SUMMER_SOLSTICE);
+    pushLabel('Winter Solstice Path', DEC_WINTER_SOLSTICE);
   }
 }
 
-function pushLabel(text, ra, dec, gap) {
-  const letters = makeDeclinationText(text, ra, dec, gap);
-  for (let i = 0; i < letters.length; i++) { scene.objects.push(letters[i]); }
+function pushLabel(text, dec) {
+  scene.objects.push(new Caption(text, dec));
   if (activeLabels.indexOf(text) === -1) { activeLabels.push(text); }
 }
 
@@ -904,19 +955,27 @@ function paintObject(ctx, obj) {
     ctx.scale(1, ys);
     drawArt(ctx, ART.stickman);
   } else {
-    // Caption letters are drawn UPRIGHT: positioned on the sphere, but never
-    // rotated or squashed with it. Each letter still sits at its own point
-    // along the line of constant declination, so the caption follows the
-    // circle it annotates and travels with the sphere as the view turns --
-    // but the glyphs stay level and readable instead of spinning, tilting or
-    // mirroring. See the "static captions" note in CONVERSION_NOTES.md.
-    ctx.font = LETTER_FONT;
-    ctx.fillStyle = LETTER_COLOR;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(obj.data.letter, 0, 0);
+    // Captions: one level, left-to-right string. No rotation or scale is
+    // applied, so the text reads the same at every viewing angle.
+    drawCaptionText(ctx, obj.text, 0, 0);
   }
   ctx.restore();
+}
+
+// A dark halo keeps the white caption legible wherever it lands -- over the
+// bright celestial equator, the red sun paths, or the light green horizon
+// plane -- without which contrast would depend on what happened to be behind
+// the text at that rotation.
+function drawCaptionText(ctx, text, x, y) {
+  ctx.font = LETTER_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = LETTER_COLOR;
+  ctx.fillText(text, x, y);
 }
 
 function paintObjectsIn(ctx, region) {
